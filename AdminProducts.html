@@ -1,0 +1,70 @@
+<!-- MODULE giao diện: Ẩn / Xoá sản phẩm (server: Products.gs, adminSearchProducts trong Admin.gs) -->
+<div class="card">
+  <h2>Ẩn / Xoá sản phẩm</h2>
+  <p class="hint">Sản phẩm bị ẩn sẽ không hiện khi khách tìm trên bot. Xoá sẽ bỏ hẳn dòng khỏi sheet.</p>
+  <input id="pmQuery" type="text" placeholder="Tên hoặc mã (để trống = 30 sản phẩm mới nhất)" autocomplete="off">
+  <div class="btns"><button id="pmSearch" class="sec">Tìm</button></div>
+  <div id="pmList"></div>
+</div>
+<script>
+(window.AdminModules = window.AdminModules || []).push((function () {
+  let ctx;
+
+  async function load() {
+    const { $, run, toast } = ctx;
+    try {
+      const list = await run('adminSearchProducts', $('pmQuery').value.trim());
+      const box = $('pmList');
+      box.textContent = '';
+      if (!list.length) {
+        const p = document.createElement('p');
+        p.className = 'hint';
+        p.textContent = 'Không có sản phẩm phù hợp.';
+        box.appendChild(p);
+        return;
+      }
+      list.forEach((it) => box.appendChild(item(it)));
+    } catch (e) {
+      toast(e.message, false);
+    }
+  }
+
+  function item(it) {
+    const { act } = ctx;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px';
+
+    const name = document.createElement('span');
+    name.style.flex = '1';
+    name.textContent = it.code + ' · ' + it.name;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (it.hidden ? 'bad' : 'ok');
+    badge.textContent = it.hidden ? 'Ẩn' : 'Hiện';
+
+    const tog = document.createElement('button');
+    tog.className = 'sec';
+    tog.textContent = it.hidden ? 'Hiện lại' : 'Ẩn';
+    tog.onclick = async () => { if (await act(tog, 'adminSetProductVisibility', it.code, !it.hidden)) load(); };
+
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = 'Xoá';
+    del.onclick = async () => {
+      if (!confirm('Xoá hẳn ' + it.code + ' khỏi sheet?')) return;
+      if (await act(del, 'adminDeleteProduct', it.code)) load();
+    };
+
+    row.append(name, badge, tog, del);
+    return row;
+  }
+
+  return {
+    init(c) {
+      ctx = c;
+      c.$('pmSearch').onclick = load;
+      c.$('pmQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+    }
+  };
+})());
+</script>

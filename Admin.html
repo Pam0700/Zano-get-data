@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zalo Bot Admin</title>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --text:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --blue:#0068ff; --ok:#16a34a; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1b1f24; --text:#e8eaed; --muted:#9aa0a6; --line:#2d333b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:560px; margin:0 auto; }
+  h1 { font-size:20px; margin:4px 0 14px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .row span:first-child { color:var(--muted); }
+  .row span:last-child { text-align:right; word-break:break-all; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; font-weight:600; color:#fff; }
+  .badge.ok { background:var(--ok); } .badge.bad { background:var(--bad); }
+  input, textarea, select { width:100%; padding:10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--text); font-size:15px; margin:4px 0 8px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--blue); color:#fff; font-size:14px; font-weight:600; cursor:pointer; }
+  button.sec { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.danger { background:var(--bad); }
+  button:disabled { opacity:.5; cursor:wait; }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 6px; }
+  #toast { position:fixed; left:12px; right:12px; bottom:14px; max-width:536px; margin:0 auto; padding:12px 14px; border-radius:10px; color:#fff; display:none; }
+  #toast.ok { background:var(--ok); } #toast.bad { background:var(--bad); }
+  .hidden { display:none; }
+  label { display:block; font-size:13px; color:var(--muted); margin-top:6px; }
+  #preview { max-width:100%; max-height:200px; border-radius:8px; margin:6px 0; display:none; }
+  .code { font-weight:700; }
+  textarea { min-height:140px; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+  .pv { max-width:100%; max-height:200px; border-radius:8px; margin:6px 0; display:none; }
+  .pick { display:block; width:100%; text-align:left; margin-top:6px; }
+  .chk { display:flex; align-items:center; gap:8px; }
+  .chk input { width:auto; margin:0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🤖 Zalo Bot Admin</h1>
+
+  <!-- Đăng nhập -->
+  <div id="login" class="card">
+    <h2>Đăng nhập</h2>
+    <input id="pw" type="password" placeholder="Mật khẩu quản trị" autocomplete="current-password">
+    <button id="btnLogin">Đăng nhập</button>
+  </div>
+
+  <!-- Nội dung quản trị -->
+  <div id="app" class="hidden">
+    <div class="card">
+      <h2>Trạng thái</h2>
+      <div id="status"></div>
+      <div class="btns" style="margin-top:10px">
+        <button id="btnRefresh" class="sec">Làm mới</button>
+        <button id="btnSetWh" class="sec">Đăng ký lại webhook</button>
+        <button id="btnDelWh" class="sec">Xoá webhook</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Địa chỉ Web App (webhook)</h2>
+      <p class="hint">Mỗi lần tạo <b>New deployment</b> sẽ ra địa chỉ /exec mới. Hãy mở trang này bằng địa chỉ mới nhất rồi bấm "Dùng địa chỉ trang này", hoặc dán địa chỉ vào ô bên dưới.</p>
+      <p class="hint" id="urlInfo"></p>
+      <input id="urlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+      <div class="btns">
+        <button id="btnUrlSave">Lưu &amp; đăng ký webhook</button>
+        <button id="btnUrlCurrent" class="sec" type="button">Dùng địa chỉ trang này</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Thêm sản phẩm</h2>
+      <p class="hint">Mã sản phẩm tiếp theo (tự sinh): <span id="nextCode" class="code">...</span></p>
+      <div id="fields"></div>
+      <label for="imgFile">Hình ảnh (tuỳ chọn, tự nén trước khi tải lên)</label>
+      <input id="imgFile" type="file" accept="image/*">
+      <img id="preview" alt="Xem trước">
+      <div class="btns" style="margin-top:8px">
+        <button id="btnAdd">Thêm sản phẩm</button>
+        <button id="btnClear" class="sec" type="button">Xoá form</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sửa sản phẩm</h2>
+      <div id="editSearchBox">
+        <input id="editQuery" type="text" placeholder="Tìm theo tên hoặc mã (để trống = 30 sản phẩm mới nhất)" autocomplete="off">
+        <div class="btns"><button id="btnEditSearch" class="sec">Tìm</button></div>
+        <div id="editResults"></div>
+      </div>
+      <div id="editBox" class="hidden">
+        <p class="hint">Đang sửa: <span id="editCode" class="code"></span> (mã không đổi)</p>
+        <div id="editFields"></div>
+        <label>Hình ảnh hiện tại</label>
+        <img id="editCurrentImg" class="pv" alt="Ảnh hiện tại">
+        <label for="editImgFile">Thay ảnh mới (tuỳ chọn)</label>
+        <input id="editImgFile" type="file" accept="image/*">
+        <img id="editPreview" class="pv" alt="Ảnh mới">
+        <label class="chk"><input type="checkbox" id="editRemoveImg"> Xoá ảnh hiện tại</label>
+        <div class="btns" style="margin-top:8px">
+          <button id="btnEditSave">Lưu thay đổi</button>
+          <button id="btnEditCancel" class="sec" type="button">Huỷ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Các module giao diện: mỗi file là 1 card + 1 script đăng ký vào window.AdminModules -->
+    <?!= include('AdminAccess') ?>
+    <?!= include('AdminProducts') ?>
+    <?!= include('AdminImport') ?>
+    <?!= include('AdminLogs') ?>
+    <?!= include('AdminAlerts') ?>
+
+    <div class="card">
+      <h2>Đổi Bot Token</h2>
+      <p class="hint">Token mới được kiểm tra với Zalo trước khi lưu, sau đó webhook được đăng ký lại.</p>
+      <input id="newToken" type="password" placeholder="Dán token mới" autocomplete="off">
+      <div class="btns">
+        <button id="btnToken">Lưu token</button>
+        <button id="btnShowToken" class="sec" type="button">Hiện/ẩn</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Đổi Webhook Secret</h2>
+      <p class="hint">8-256 ký tự, chỉ chữ và số. Lưu xong webhook tự đăng ký lại; nếu lỗi sẽ giữ secret cũ.</p>
+      <input id="newSecret" type="text" placeholder="Secret mới" autocomplete="off">
+      <div class="btns">
+        <button id="btnSecret">Lưu secret</button>
+        <button id="btnGen" class="sec" type="button">Tạo ngẫu nhiên</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+  let pw = '';
+  const $ = (id) => document.getElementById(id);
+
+  function run(fn, ...args) {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler((e) => reject(new Error((e && e.message) || String(e))))[fn](pw, ...args);
+    });
+  }
+
+  function toast(msg, ok) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = ok ? 'ok' : 'bad';
+    t.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => (t.style.display = 'none'), 5000);
+  }
+
+  async function act(btn, fn, ...args) {
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Đang xử lý…';
+    try {
+      const r = await run(fn, ...args);
+      if (r && r.message) toast(r.message, true);
+      return r;
+    } catch (e) {
+      toast(e.message, false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
+  function addRow(parent, label, value, state) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const a = document.createElement('span'); a.textContent = label;
+    const b = document.createElement('span');
+    if (state === undefined) {
+      b.textContent = value;
+    } else {
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + (state ? 'ok' : 'bad');
+      badge.textContent = value;
+      b.appendChild(badge);
+    }
+    row.append(a, b);
+    parent.appendChild(row);
+  }
+
+  function render(s) {
+    const box = $('status');
+    box.textContent = '';
+    addRow(box, 'Token', s.token.set ? s.token.masked : 'Chưa đặt', s.token.set);
+    addRow(box, 'Bot', s.bot.ok ? 'Hoạt động: ' + s.bot.name : (s.bot.error || 'Lỗi'), s.bot.ok);
+    addRow(box, 'Secret', s.secret.set ? s.secret.masked : 'Chưa đặt', s.secret.set);
+    const whText = s.webhook.error ? s.webhook.error
+      : !s.webhook.set ? 'Chưa đăng ký'
+      : s.webhook.matches ? 'Đã đăng ký, khớp secret' : 'Đã đăng ký nhưng KHÔNG khớp';
+    addRow(box, 'Webhook', whText, s.webhook.matches);
+    if (s.webhook.base) addRow(box, 'Địa chỉ sẽ đăng ký', s.webhook.base + ' (' + s.webhook.source + ')');
+    else if (s.webhook.baseError) addRow(box, 'Địa chỉ sẽ đăng ký', s.webhook.baseError, false);
+    $('urlInfo').textContent = s.webhook.base ? 'Đang dùng: ' + s.webhook.base + ' (' + s.webhook.source + ')' : 'Chưa xác định được địa chỉ.';
+    if (!$('urlInput').value) $('urlInput').value = s.webhook.base || '';
+    if (s.webhook.url) addRow(box, 'URL webhook', s.webhook.url);
+    addRow(box, 'Google Sheet', s.sheet.ok ? s.sheet.name + ' (' + s.sheet.rows + ' dòng)' : (s.sheet.error || 'Lỗi'), s.sheet.ok);
+    addRow(box, 'Cập nhật lúc', s.time);
+  }
+
+  async function refresh() {
+    const btn = $('btnRefresh');
+    btn.disabled = true;
+    try { render(await run('adminGetStatus')); }
+    catch (e) { toast(e.message, false); }
+    finally { btn.disabled = false; }
+  }
+
+  $('btnLogin').onclick = async () => {
+    pw = $('pw').value;
+    const btn = $('btnLogin');
+    btn.disabled = true;
+    try {
+      await run('adminLogin');
+      $('login').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      refresh();
+      loadForm();
+      (window.AdminModules || []).forEach((m) => m.onLogin && m.onLogin(ctx));
+    } catch (e) {
+      pw = '';
+      toast(e.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  $('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnLogin').click(); });
+
+  $('btnRefresh').onclick = refresh;
+
+  /* ===== Thêm sản phẩm ===== */
+  let formFields = [];
+  let image = null;
+
+  function buildForm(schema) {
+    formFields = schema.fields;
+    $('nextCode').textContent = schema.nextCode;
+    const box = $('fields');
+    box.textContent = '';
+    formFields.forEach((f) => {
+      const lab = document.createElement('label');
+      lab.textContent = f.header + (f.required ? ' *' : '');
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.id = 'f_' + f.col;
+      inp.autocomplete = 'off';
+      if (f.numeric) inp.inputMode = 'numeric';
+      lab.htmlFor = inp.id;
+      box.append(lab, inp);
+    });
+  }
+
+  async function loadForm() {
+    try { buildForm(await run('adminGetFormSchema')); }
+    catch (e) { toast(e.message, false); }
+  }
+
+  function clearForm() {
+    formFields.forEach((f) => { $('f_' + f.col).value = ''; });
+    $('imgFile').value = '';
+    $('preview').style.display = 'none';
+    image = null;
+  }
+
+  // Thu nhỏ về tối đa 1024px và nén JPEG trước khi gửi lên
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1024 / Math.max(img.width, img.height));
+        const w = Math.round(img.width * k), h = Math.round(img.height * k);
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        const dataUrl = c.toDataURL('image/jpeg', 0.8);
+        resolve({ mime: 'image/jpeg', base64: dataUrl.split(',')[1], preview: dataUrl });
+      };
+      img.onerror = () => reject(new Error('Không đọc được file ảnh.'));
+      img.src = url;
+    });
+  }
+
+  $('imgFile').onchange = async () => {
+    const file = $('imgFile').files[0];
+    if (!file) { image = null; $('preview').style.display = 'none'; return; }
+    try {
+      image = await compressImage(file);
+      $('preview').src = image.preview;
+      $('preview').style.display = 'block';
+    } catch (e) {
+      image = null;
+      toast(e.message, false);
+    }
+  };
+
+  $('btnClear').onclick = clearForm;
+
+  $('btnAdd').onclick = async () => {
+    const values = {};
+    formFields.forEach((f) => { values[f.col] = $('f_' + f.col).value.trim(); });
+    const missing = formFields.find((f) => f.required && !values[f.col]);
+    if (missing) return toast('Hãy nhập: ' + missing.header, false);
+
+    const payloadImage = image ? { mime: image.mime, base64: image.base64 } : null;
+    const r = await act($('btnAdd'), 'adminAddProduct', values, payloadImage);
+    if (r) {
+      clearForm();
+      if (r.nextCode) $('nextCode').textContent = r.nextCode;   // không cần tải lại form
+    }
+  };
+
+  /* ===== Sửa sản phẩm ===== */
+  let editCode = '';
+  let editImage = null;
+
+  async function searchEdit() {
+    const btn = $('btnEditSearch');
+    btn.disabled = true;
+    try {
+      const list = await run('adminSearchProducts', $('editQuery').value.trim());
+      const box = $('editResults');
+      box.textContent = '';
+      if (!list.length) {
+        const p = document.createElement('p');
+        p.className = 'hint';
+        p.textContent = 'Không có sản phẩm phù hợp.';
+        box.appendChild(p);
+        return;
+      }
+      list.forEach((it) => {
+        const b = document.createElement('button');
+        b.className = 'sec pick';
+        b.textContent = it.code + ' · ' + it.name;
+        b.onclick = () => openEdit(it.code);
+        box.appendChild(b);
+      });
+    } catch (e) {
+      toast(e.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function openEdit(code) {
+    try {
+      if (!formFields.length) await loadForm();
+      const p = await run('adminGetProduct', code);
+      editCode = p.code;
+      $('editCode').textContent = p.code;
+
+      const box = $('editFields');
+      box.textContent = '';
+      formFields.forEach((f) => {
+        const lab = document.createElement('label');
+        lab.textContent = f.header + (f.required ? ' *' : '');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.id = 'e_' + f.col;
+        inp.autocomplete = 'off';
+        if (f.numeric) inp.inputMode = 'numeric';
+        inp.value = p.values[f.col] || '';
+        lab.htmlFor = inp.id;
+        box.append(lab, inp);
+      });
+
+      const cur = $('editCurrentImg');
+      if (p.imageUrl) { cur.src = p.imageUrl; cur.style.display = 'block'; }
+      else { cur.removeAttribute('src'); cur.style.display = 'none'; }
+
+      editImage = null;
+      $('editImgFile').value = '';
+      $('editPreview').style.display = 'none';
+      $('editRemoveImg').checked = false;
+
+      $('editSearchBox').classList.add('hidden');
+      $('editBox').classList.remove('hidden');
+    } catch (e) {
+      toast(e.message, false);
+    }
+  }
+
+  function closeEdit() {
+    editCode = '';
+    editImage = null;
+    $('editBox').classList.add('hidden');
+    $('editSearchBox').classList.remove('hidden');
+  }
+
+  $('btnEditSearch').onclick = searchEdit;
+  $('editQuery').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchEdit(); });
+  $('btnEditCancel').onclick = closeEdit;
+
+  $('editImgFile').onchange = async () => {
+    const file = $('editImgFile').files[0];
+    if (!file) { editImage = null; $('editPreview').style.display = 'none'; return; }
+    try {
+      editImage = await compressImage(file);
+      $('editPreview').src = editImage.preview;
+      $('editPreview').style.display = 'block';
+      $('editRemoveImg').checked = false;
+    } catch (e) {
+      editImage = null;
+      toast(e.message, false);
+    }
+  };
+
+  $('btnEditSave').onclick = async () => {
+    const values = {};
+    formFields.forEach((f) => { values[f.col] = $('e_' + f.col).value.trim(); });
+    const missing = formFields.find((f) => f.required && !values[f.col]);
+    if (missing) return toast('Hãy nhập: ' + missing.header, false);
+
+    const payloadImage = editImage ? { mime: editImage.mime, base64: editImage.base64 } : null;
+    const r = await act($('btnEditSave'), 'adminUpdateProduct', editCode, values, payloadImage, $('editRemoveImg').checked);
+    if (r) {
+      closeEdit();
+      searchEdit();
+    }
+  };
+
+  $('btnUrlSave').onclick = async () => {
+    await act($('btnUrlSave'), 'adminSaveWebAppUrl', $('urlInput').value.trim());
+    $('urlInput').value = '';
+    refresh();
+  };
+
+  $('btnUrlCurrent').onclick = async () => {
+    await act($('btnUrlCurrent'), 'adminUseCurrentUrl');
+    $('urlInput').value = '';
+    refresh();
+  };
+
+  $('btnSetWh').onclick = async () => { await act($('btnSetWh'), 'adminSetWebhook'); refresh(); };
+
+  $('btnDelWh').onclick = async () => {
+    if (!confirm('Xoá webhook? Bot sẽ ngừng nhận tin nhắn.')) return;
+    await act($('btnDelWh'), 'adminDeleteWebhook');
+    refresh();
+  };
+
+  $('btnToken').onclick = async () => {
+    const v = $('newToken').value.trim();
+    if (!v) return toast('Hãy nhập token mới.', false);
+    if (!confirm('Lưu token mới và đăng ký lại webhook?')) return;
+    const r = await act($('btnToken'), 'adminSaveToken', v);
+    if (r) $('newToken').value = '';
+    refresh();
+  };
+
+  $('btnShowToken').onclick = () => {
+    const i = $('newToken');
+    i.type = i.type === 'password' ? 'text' : 'password';
+  };
+
+  $('btnSecret').onclick = async () => {
+    const v = $('newSecret').value.trim();
+    if (!/^[A-Za-z0-9]{8,256}$/.test(v)) return toast('Secret phải dài 8-256 ký tự, chỉ chữ và số.', false);
+    if (!confirm('Lưu secret mới và đăng ký lại webhook?')) return;
+    const r = await act($('btnSecret'), 'adminSaveSecret', v);
+    if (r) $('newSecret').value = '';
+    refresh();
+  };
+
+  $('btnGen').onclick = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const arr = new Uint32Array(32);
+    crypto.getRandomValues(arr);
+    $('newSecret').value = Array.from(arr, (n) => chars[n % chars.length]).join('');
+  };
+
+  // Các module (AdminProducts, AdminImport, AdminLogs, AdminAlerts) nhận công cụ dùng chung qua ctx
+  const ctx = { $, run, toast, act, refresh, compressImage, loadForm };
+  (window.AdminModules || []).forEach((m) => m.init && m.init(ctx));
+</script>
+</body>
+</html>

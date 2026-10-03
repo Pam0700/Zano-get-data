@@ -1,0 +1,57 @@
+<!-- MODULE giao diện: Cảnh báo lỗi (server: Alerts.gs) -->
+<div class="card">
+  <h2>Cảnh báo lỗi</h2>
+  <div id="alInfo" class="hint"></div>
+  <div class="btns">
+    <button id="alLink" class="sec">Lấy mã liên kết Zalo</button>
+    <button id="alTest" class="sec">Gửi tin thử</button>
+    <button id="alClear" class="sec">Xoá người nhận</button>
+    <button id="alHealth" class="sec">Kiểm tra hằng ngày</button>
+  </div>
+  <div id="alCode" style="margin-top:8px;font-weight:600"></div>
+  <label for="alEmail">Email dự phòng (dùng khi Zalo không gửi được, VD token hết hạn)</label>
+  <input id="alEmail" type="text" placeholder="email@example.com (để trống để xoá)" autocomplete="off">
+  <div class="btns"><button id="alSaveEmail" class="sec">Lưu email</button></div>
+</div>
+<script>
+(window.AdminModules = window.AdminModules || []).push((function () {
+  let ctx, healthOn = false;
+
+  async function load() {
+    const { $, run } = ctx;
+    try {
+      const i = await run('adminGetAlertInfo');
+      healthOn = i.health === true;
+      $('alInfo').textContent =
+        'Người nhận qua Zalo: ' + i.linked +
+        ' · Email: ' + (i.email || 'chưa đặt') +
+        ' · Kiểm tra hằng ngày: ' + (i.health === null ? 'chưa cấp quyền' : (i.health ? 'Bật' : 'Tắt'));
+      $('alHealth').textContent = healthOn ? 'Tắt kiểm tra hằng ngày' : 'Bật kiểm tra hằng ngày';
+      if (i.email && !$('alEmail').value) $('alEmail').value = i.email;
+    } catch (e) {
+      ctx.toast(e.message, false);
+    }
+  }
+
+  return {
+    init(c) {
+      ctx = c;
+      const { $, act } = c;
+
+      $('alLink').onclick = async () => {
+        const r = await act($('alLink'), 'adminCreateLinkCode');
+        if (r) $('alCode').textContent = 'Nhắn cho bot trong ' + r.minutes + ' phút:  #lienket ' + r.code;
+      };
+      $('alTest').onclick = () => act($('alTest'), 'adminSendTestAlert');
+      $('alClear').onclick = async () => {
+        if (!confirm('Xoá toàn bộ người nhận cảnh báo qua Zalo?')) return;
+        await act($('alClear'), 'adminClearAlertTargets');
+        load();
+      };
+      $('alHealth').onclick = async () => { await act($('alHealth'), 'adminSetHealthCheck', !healthOn); load(); };
+      $('alSaveEmail').onclick = async () => { await act($('alSaveEmail'), 'adminSaveAlertEmail', $('alEmail').value.trim()); load(); };
+    },
+    onLogin() { load(); }
+  };
+})());
+</script>

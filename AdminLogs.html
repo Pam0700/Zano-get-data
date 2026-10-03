@@ -1,0 +1,55 @@
+<!-- MODULE giao diện: Thống kê tra cứu (server: Logs.gs) -->
+<div class="card">
+  <h2>Thống kê tra cứu</h2>
+  <select id="lgDays">
+    <option value="1">24 giờ qua</option>
+    <option value="7" selected>7 ngày qua</option>
+    <option value="30">30 ngày qua</option>
+  </select>
+  <div class="btns"><button id="lgLoad" class="sec">Xem</button></div>
+  <div id="lgOut"></div>
+</div>
+<script>
+(window.AdminModules = window.AdminModules || []).push((function () {
+  let ctx;
+  const OUT = { found: 'có kết quả', multiple: 'nhiều kết quả', not_found: 'không thấy', selected: 'chọn', error: 'lỗi' };
+
+  function section(box, title, lines) {
+    const h = document.createElement('p');
+    h.className = 'hint';
+    h.style.marginTop = '10px';
+    h.textContent = title;
+    const d = document.createElement('div');
+    d.style.whiteSpace = 'pre-wrap';
+    d.textContent = lines.length ? lines.join('\n') : '(chưa có)';
+    box.append(h, d);
+  }
+
+  async function load() {
+    const { $, run, toast } = ctx;
+    const btn = $('lgLoad');
+    btn.disabled = true;
+    try {
+      const s = await run('adminGetLogStats', $('lgDays').value);
+      const box = $('lgOut');
+      box.textContent = '';
+      section(box, 'Tổng quan', [
+        s.total + ' lượt · ' + s.users + ' người dùng',
+        'Có kết quả ' + s.found + ' · Nhiều kết quả ' + s.multiple + ' · Không thấy ' + s.not_found,
+        'Chọn từ danh sách ' + s.selected + ' · Lỗi ' + s.error
+      ]);
+      section(box, 'Từ khoá hay tìm', s.topKeywords.map((k) => k.count + '× ' + k.keyword));
+      section(box, 'Từ khoá KHÔNG có kết quả (nên bổ sung)', s.topNotFound.map((k) => k.count + '× ' + k.keyword));
+      section(box, '20 lượt gần nhất', s.recent.map((r) => r.time + ' · ' + r.keyword + ' (' + (OUT[r.outcome] || r.outcome) + ')'));
+    } catch (e) {
+      toast(e.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  return {
+    init(c) { ctx = c; c.$('lgLoad').onclick = load; }
+  };
+})());
+</script>

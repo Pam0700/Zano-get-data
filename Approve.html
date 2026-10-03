@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duyệt truy cập</title>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --text:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --blue:#0068ff; --ok:#16a34a; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1b1f24; --text:#e8eaed; --muted:#9aa0a6; --line:#2d333b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  .card { max-width:420px; margin:24px auto; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  h1 { font-size:19px; margin:0 0 12px; }
+  #info, #result { white-space:pre-line; margin:8px 0; }
+  .btns { display:none; gap:10px; margin-top:14px; }
+  button { flex:1; padding:12px; border:0; border-radius:10px; color:#fff; font-size:15px; font-weight:600; cursor:pointer; background:var(--ok); }
+  button.no { background:var(--bad); }
+  button:disabled { opacity:.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔔 Duyệt truy cập bot</h1>
+  <div id="info">Đang tải…</div>
+  <div class="btns" id="btns">
+    <button id="ok">✅ Cho phép</button>
+    <button id="no" class="no">⛔ Chặn</button>
+  </div>
+  <div id="result"></div>
+</div>
+<script>
+  const token = '<?= token ?>';
+  const $ = (id) => document.getElementById(id);
+
+  function done(msg) { $('btns').style.display = 'none'; $('result').textContent = msg; }
+
+  google.script.run
+    .withSuccessHandler((r) => {
+      if (!r.found) { $('info').textContent = ''; done('Yêu cầu không còn hiệu lực (đã được xử lý hoặc không tồn tại).'); return; }
+      $('info').textContent = 'Tên: ' + (r.name || '(không rõ)') + '\nZalo ID: ' + r.id + '\nLúc: ' + r.time;
+      $('btns').style.display = 'flex';
+    })
+    .withFailureHandler((e) => { $('info').textContent = ''; done('Lỗi: ' + e.message); })
+    .approvalInfo(token);
+
+  function decide(allow) {
+    $('ok').disabled = true; $('no').disabled = true;
+    google.script.run
+      .withSuccessHandler((r) => done(r.message))
+      .withFailureHandler((e) => done('Lỗi: ' + e.message))
+      .approvalDecide(token, allow);
+  }
+  $('ok').onclick = () => decide(true);
+  $('no').onclick = () => decide(false);
+</script>
+</body>
+</html>

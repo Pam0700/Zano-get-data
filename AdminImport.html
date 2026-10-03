@@ -1,0 +1,55 @@
+<!-- MODULE giao diện: Nhập hàng loạt (server: Import.gs) -->
+<div class="card">
+  <h2>Nhập hàng loạt</h2>
+  <p class="hint">Dòng đầu là tiêu đề cột trùng với sheet (bắt buộc có cột tên sản phẩm), các dòng sau là sản phẩm. Dán từ Excel/Google Sheets hoặc chọn file CSV (UTF-8). Tối đa 200 dòng. Cột Hình ảnh chỉ nhận link https. Mã SP tự sinh.</p>
+  <input id="imFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain">
+  <textarea id="imText" placeholder="Tên SP&#9;Giá&#9;Hoa hồng&#9;Link&#10;Máy xay&#9;800000&#9;8%&#9;https://..."></textarea>
+  <div class="btns">
+    <button id="imCheck" class="sec">Kiểm tra</button>
+    <button id="imRun">Nhập vào sheet</button>
+  </div>
+  <div id="imOut" style="white-space:pre-wrap;margin-top:8px"></div>
+</div>
+<script>
+(window.AdminModules = window.AdminModules || []).push((function () {
+  function report(r) {
+    const lines = [];
+    lines.push((r.dryRun ? 'Kiểm tra: ' : 'Đã nhập: ') + r.added + ' sản phẩm hợp lệ, bỏ qua ' + r.skipped.length + ' dòng.');
+    if (r.sampleNames.length) lines.push('Ví dụ: ' + r.sampleNames.join(', '));
+    if (r.ignoredColumns.length) lines.push('Cột không khớp sheet (bỏ qua): ' + r.ignoredColumns.join(', '));
+    r.skipped.slice(0, 20).forEach((s) => lines.push('• Dòng ' + s.line + (s.name ? ' (' + s.name + ')' : '') + ': ' + s.reason));
+    if (r.skipped.length > 20) lines.push('... và ' + (r.skipped.length - 20) + ' dòng khác');
+    return lines.join('\n');
+  }
+
+  return {
+    init({ $, run, toast, act, loadForm }) {
+      $('imFile').onchange = () => {
+        const f = $('imFile').files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => { $('imText').value = rd.result; };
+        rd.readAsText(f, 'UTF-8');
+      };
+
+      $('imCheck').onclick = async () => {
+        const text = $('imText').value;
+        if (!text.trim()) return toast('Hãy dán dữ liệu hoặc chọn file.', false);
+        const r = await act($('imCheck'), 'adminImportProducts', text, true);
+        if (r) $('imOut').textContent = report(r);
+      };
+
+      $('imRun').onclick = async () => {
+        const text = $('imText').value;
+        if (!text.trim()) return toast('Hãy dán dữ liệu hoặc chọn file.', false);
+        if (!confirm('Nhập các sản phẩm hợp lệ vào sheet?')) return;
+        const r = await act($('imRun'), 'adminImportProducts', text, false);
+        if (r) {
+          $('imOut').textContent = report(r);
+          if (r.added) { $('imText').value = ''; $('imFile').value = ''; toast('Đã nhập ' + r.added + ' sản phẩm.', true); loadForm(); }
+        }
+      };
+    }
+  };
+})());
+</script>

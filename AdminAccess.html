@@ -1,0 +1,138 @@
+<!-- MODULE giao diện: Mật khẩu truy cập + duyệt người dùng (server: Access.gs) -->
+<div class="card">
+  <h2>Mật khẩu truy cập bot</h2>
+  <p class="hint" id="acInfo"></p>
+  <p class="hint">Khi bật, người lạ phải nhắn đúng mật khẩu cho bot ở lần đầu. Mật khẩu chỉ lưu dạng băm, không xem lại được.</p>
+  <input id="acPass" type="text" placeholder="Mật khẩu mới (4-64 ký tự, không dấu cách)" autocomplete="off">
+  <label class="chk"><input type="checkbox" id="acRevoke"> Bắt buộc mọi người nhập lại mật khẩu mới</label>
+  <div class="btns" style="margin-top:8px">
+    <button id="acSave">Lưu mật khẩu</button>
+    <button id="acGen" class="sec" type="button">Tạo ngẫu nhiên</button>
+    <button id="acOff" class="sec" type="button">Tắt bảo vệ</button>
+  </div>
+
+  <label class="chk" style="margin-top:14px"><input type="checkbox" id="acApproval"> Cần quản trị viên duyệt người nhập đúng mật khẩu</label>
+  <p class="hint" id="acWarn"></p>
+
+  <div class="btns" style="margin-top:8px">
+    <button id="acList" class="sec">Xem người dùng</button>
+    <button id="acRevokeAll" class="danger">Thu hồi tất cả</button>
+  </div>
+  <div id="acSummary" class="hint" style="margin-top:8px"></div>
+  <div id="acUsers"></div>
+</div>
+<script>
+(window.AdminModules = window.AdminModules || []).push((function () {
+  let ctx;
+
+  async function loadInfo() {
+    const { $, run, toast } = ctx;
+    try {
+      const i = await run('adminGetAccessInfo');
+      $('acInfo').textContent = i.enabled ? 'Trạng thái: ĐANG BẬT (người lạ phải nhập mật khẩu)' : 'Trạng thái: TẮT (ai có link bot cũng dùng được)';
+      $('acApproval').checked = i.approval;
+      $('acWarn').textContent = i.approval && i.linked === 0
+        ? '⚠️ Chưa liên kết Zalo quản trị viên (mục Cảnh báo lỗi) nên sẽ không có tin nhắn duyệt. Bạn vẫn duyệt được ngay tại đây.'
+        : (i.approval ? 'Tin nhắn duyệt gửi tới ' + i.linked + ' tài khoản quản trị viên, kèm link bấm và lệnh #duyet / #chan.' : '');
+    } catch (e) { toast(e.message, false); }
+  }
+
+  async function loadUsers() {
+    const { $, run, toast } = ctx;
+    const btn = $('acList');
+    btn.disabled = true;
+    try {
+      const r = await run('adminListAccessUsers');
+      $('acSummary').textContent = r.active + ' hoạt động · ' + r.pending + ' chờ duyệt · ' + r.blocked + ' bị chặn';
+      const box = $('acUsers');
+      box.textContent = '';
+      r.users.forEach((u) => box.appendChild(row(u)));
+    } catch (e) {
+      toast(e.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function button(cls, text, onclick) {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = text;
+    b.onclick = () => onclick(b);
+    return b;
+  }
+
+  function row(u) {
+    const { act } = ctx;
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px';
+
+    const name = document.createElement('span');
+    name.style.cssText = 'flex:1;word-break:break-all';
+    name.textContent = (u.name ? u.name + ' · ' : '') + u.id + (u.time ? ' · ' + u.time : '');
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (u.status === 'blocked' ? 'bad' : 'ok');
+    badge.textContent = { active: 'Hoạt động', pending: 'Chờ duyệt', blocked: 'Chặn' }[u.status];
+    if (u.status === 'pending') badge.style.background = '#d97706';
+    el.append(name, badge);
+
+    if (u.status === 'pending') {
+      el.append(
+        button('', 'Cho phép', async (b) => { if (await act(b, 'adminDecideAccess', u.id, true)) loadUsers(); }),
+        button('danger', 'Chặn', async (b) => { if (await act(b, 'adminDecideAccess', u.id, false)) loadUsers(); })
+      );
+    } else {
+      el.append(
+        button('sec', u.status === 'blocked' ? 'Bỏ chặn' : 'Chặn', async (b) => { if (await act(b, 'adminSetAccessUserBlocked', u.id, u.status !== 'blocked')) loadUsers(); }),
+        button('danger', 'Xoá', async (b) => {
+          if (!confirm('Xoá người dùng này? Họ phải nhập lại mật khẩu để dùng bot.')) return;
+          if (await act(b, 'adminRemoveAccessUser', u.id)) loadUsers();
+        })
+      );
+    }
+    return el;
+  }
+
+  return {
+    init(c) {
+      ctx = c;
+      const { $, act, toast } = c;
+
+      $('acSave').onclick = async () => {
+        const p = $('acPass').value.trim();
+        if (!/^\S{4,64}$/.test(p)) return toast('Mật khẩu dài 4-64 ký tự, không có dấu cách.', false);
+        if ($('acRevoke').checked && !confirm('Mọi người dùng hiện tại sẽ phải nhập lại mật khẩu mới. Tiếp tục?')) return;
+        const r = await act($('acSave'), 'adminSetAccessPass', p, $('acRevoke').checked);
+        if (r) { $('acPass').value = ''; $('acRevoke').checked = false; loadInfo(); }
+      };
+
+      $('acGen').onclick = () => {
+        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const arr = new Uint32Array(8);
+        crypto.getRandomValues(arr);
+        $('acPass').value = Array.from(arr, (n) => chars[n % chars.length]).join('');
+      };
+
+      $('acOff').onclick = async () => {
+        if (!confirm('Tắt bảo vệ? Ai có link bot cũng dùng được.')) return;
+        if (await act($('acOff'), 'adminDisableAccess')) loadInfo();
+      };
+
+      $('acApproval').onchange = async () => {
+        const on = $('acApproval').checked;
+        await act($('acApproval'), 'adminSetAccessApproval', on);
+        loadInfo();
+      };
+
+      $('acList').onclick = loadUsers;
+
+      $('acRevokeAll').onclick = async () => {
+        if (!confirm('Thu hồi quyền của tất cả người dùng và huỷ các yêu cầu đang chờ? Họ phải nhập lại mật khẩu.')) return;
+        if (await act($('acRevokeAll'), 'adminRevokeAllAccess')) loadUsers();
+      };
+    },
+    onLogin() { loadInfo(); }
+  };
+})());
+</script>
