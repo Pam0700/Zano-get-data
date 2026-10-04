@@ -18,14 +18,14 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.page === 'admin') {
     return HtmlService.createTemplateFromFile('Admin').evaluate()
       .setTitle('Zalo Bot Admin')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
   }
   if (e && e.parameter && e.parameter.page === 'approve') {
     const t = HtmlService.createTemplateFromFile('Approve');
     t.token = String(e.parameter.t || '').replace(/[^a-z0-9]/gi, '').substring(0, 64);
     return t.evaluate()
       .setTitle('Duyệt truy cập')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover');
   }
   return ContentService.createTextOutput('ok');
 }
