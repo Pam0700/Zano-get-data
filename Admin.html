@@ -169,6 +169,13 @@
 
       <section class="panel" id="p-settings">
     <div class="card">
+      <h2>Google Sheet (cơ sở dữ liệu)</h2>
+      <p class="hint" id="sheetInfo"></p>
+      <input id="sheetInput" type="text" placeholder="Dán link hoặc ID Google Sheet" autocomplete="off">
+      <div class="btns"><button id="btnSheetSave">Lưu &amp; kiểm tra</button></div>
+    </div>
+
+    <div class="card">
       <h2>Địa chỉ Web App (webhook)</h2>
       <p class="hint">Mỗi lần tạo <b>New deployment</b> sẽ ra địa chỉ /exec mới. Hãy mở trang này bằng địa chỉ mới nhất rồi bấm "Dùng địa chỉ trang này", hoặc dán địa chỉ vào ô bên dưới.</p>
       <p class="hint" id="urlInfo"></p>
@@ -271,7 +278,8 @@
     $('urlInfo').textContent = s.webhook.base ? 'Đang dùng: ' + s.webhook.base + ' (' + s.webhook.source + ')' : 'Chưa xác định được địa chỉ.';
     if (!$('urlInput').value) $('urlInput').value = s.webhook.base || '';
     if (s.webhook.url) addRow(box, 'URL webhook', s.webhook.url);
-    addRow(box, 'Google Sheet', s.sheet.ok ? s.sheet.name + ' (' + s.sheet.rows + ' dòng)' : (s.sheet.error || 'Lỗi'), s.sheet.ok);
+    addRow(box, 'Google Sheet', s.sheet.ok ? (s.sheet.title ? s.sheet.title + ' › ' : '') + s.sheet.name + ' (' + s.sheet.rows + ' dòng)' : (s.sheet.error || 'Lỗi'), s.sheet.ok);
+    $('sheetInfo').textContent = s.sheet.ok ? 'Đang dùng: ' + (s.sheet.title || '(không tên)') + ', tab ' + s.sheet.name + ' · ' + s.sheet.rows + ' sản phẩm' : (s.sheet.error || 'Chưa cấu hình Google Sheet.');
     addRow(box, 'Cập nhật lúc', s.time);
   }
 
@@ -499,6 +507,12 @@
       closeEdit();
       searchEdit();
     }
+  };
+
+  $('btnSheetSave').onclick = async () => {
+    const r = await act($('btnSheetSave'), 'adminSaveSpreadsheetId', $('sheetInput').value.trim());
+    if (r) $('sheetInput').value = '';
+    refresh();
   };
 
   $('btnUrlSave').onclick = async () => {

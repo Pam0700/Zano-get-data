@@ -71,7 +71,7 @@ function newToken_() {
 /* ===================== Tab Users ===================== */
 
 function getUsersSheet_() {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const ss = openSpreadsheet_();
   let sheet = ss.getSheetByName(ACCESS.SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(ACCESS.SHEET_NAME);

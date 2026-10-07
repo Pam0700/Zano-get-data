@@ -12,7 +12,7 @@ const LOGS = {
 };
 
 function getLogSheet_() {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const ss = openSpreadsheet_();
   let sheet = ss.getSheetByName(LOGS.SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(LOGS.SHEET_NAME);

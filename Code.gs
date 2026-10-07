@@ -3,17 +3,19 @@
  * Tìm sản phẩm theo TÊN, trả về văn bản kèm hình ảnh. Mã SP do hệ thống tự sinh (thêm qua trang Admin).
  *
  * Script properties (Project Settings > Script properties):
+ *   SPREADSHEET_ID  = ID Google Sheet (BẮT BUỘC; cũng đặt được ở trang Admin > Cài đặt)
  *   ZALO_BOT_TOKEN  = token bot (BẮT BUỘC)
  *   WEBHOOK_SECRET  = chuỗi bí mật 8-256 ký tự, chữ và số (BẮT BUỘC)
  *   ADMIN_PASSWORD  = mật khẩu trang Admin (xem Admin.gs)
  *   IMAGE_FOLDER_ID = tự tạo khi upload ảnh đầu tiên
  *
  * Cấu trúc sheet: A Mã SP (tự sinh) | B Tên SP | C Giá | D Hoa hồng | E Link | F Hình ảnh | G Trạng thái (Hiện/Ẩn)
- * Module: Products.gs (ẩn/xoá), Import.gs (nhập hàng loạt), Logs.gs (thống kê), Alerts.gs (cảnh báo lỗi), Access.gs + Approve.html (mật khẩu truy cập, quản trị viên duyệt)
+ * Module: Products.gs (ẩn/xoá), Import.gs (nhập hàng loạt), Logs.gs (thống kê), Alerts.gs (cảnh báo lỗi), Access.gs + Approve.html (mật khẩu truy cập, quản trị viên duyệt), RateLimit.gs (chống spam)
  */
 
 const CONFIG = {
-  SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID',
+  // Lấy từ Script properties nên dán đè Code.gs không phải nhập lại
+  get SPREADSHEET_ID() { return configProp_('SPREADSHEET_ID'); },
   SHEET_NAME: 'Products',
   HEADER_ROW: 1,
   CODE_COLUMN: 1,                // cột Mã SP (tự sinh, không dùng để tìm kiếm)
@@ -26,7 +28,6 @@ const CONFIG = {
   IMAGE_FOLDER_NAME: 'ZaloBot Images',
   CACHE_SECONDS: 60,             // cache dữ liệu sheet; 0 = tắt cache
   SELECTION_SECONDS: 600,        // nhớ danh sách gợi ý để người dùng chọn theo số
-  WEB_APP_URL: 'YOUR_WEB_APP_URL',   // URL /exec sau khi deploy
   API_BASE: 'https://bot-api.zaloplatforms.com',
   FUZZY: {
     NAME_COLUMN: 2,              // cột tên sản phẩm (2 = cột B)
@@ -80,6 +81,19 @@ function getProp_(key) {
   return PropertiesService.getScriptProperties().getProperty(key);
 }
 
+// Đọc cấu hình từ Script properties, nhớ trong 1 lần chạy để khỏi đọc lại nhiều lần
+let configMemo_ = {};
+function configProp_(key) {
+  if (!(key in configMemo_)) configMemo_[key] = getProp_(key) || '';
+  return configMemo_[key];
+}
+
+function openSpreadsheet_() {
+  const id = CONFIG.SPREADSHEET_ID;
+  if (!id) throw new Error('Chưa cấu hình Google Sheet. Hãy thêm Script property SPREADSHEET_ID hoặc nhập ở trang Admin > Cài đặt.');
+  return SpreadsheetApp.openById(id);
+}
+
 /* ===================== WEBHOOK ===================== */
 
 function doPost(e) {
@@ -94,14 +108,24 @@ function doPost(e) {
 
     const req = parseRequest_(e);
     chatId = req.chatId;
-    if (req.error) {
-      log_('warn', 'parse_error', { error: req.error });
-      if (chatId) sendZaloMessage_(chatId, req.userMessage || MSG.ERROR);
+
+    if (!req.error && isDuplicate_(req.messageId)) {
+      log_('info', 'duplicate_skipped', { messageId: req.messageId });
       return ok_();
     }
 
-    if (isDuplicate_(req.messageId)) {
-      log_('info', 'duplicate_skipped', { messageId: req.messageId });
+    // [RateLimit.gs] chống spam: vượt giới hạn thì nhắc 1 lần rồi bỏ qua, không tốn thêm lượt gọi Zalo
+    if (chatId && typeof rateLimit_ === 'function') {
+      const limited = rateLimit_(chatId);
+      if (limited) {
+        if (limited.text) sendZaloMessage_(chatId, limited.text);
+        return ok_();
+      }
+    }
+
+    if (req.error) {
+      log_('warn', 'parse_error', { error: req.error });
+      if (chatId) sendZaloMessage_(chatId, req.userMessage || MSG.ERROR);
       return ok_();
     }
 
@@ -219,28 +243,81 @@ function foldText_(v) {
     .trim();
 }
 
+/* ===== Cache bảng sản phẩm: chia nhỏ để vượt giới hạn 100KB mỗi mục của CacheService ===== */
+
+const CACHE_CHUNK = 30000;     // ký tự mỗi mảnh (tối đa ~90KB nếu toàn ký tự 3 byte)
+const CACHE_MAX_CHUNKS = 90;   // quá lớn thì bỏ qua cache, đọc thẳng từ sheet
+let sheetMemo_ = null;         // nhớ trong 1 lần chạy: các hàm gọi getSheetData_() nhiều lần chỉ đọc 1 lần
+
+function cacheBaseKey_() {
+  return 'sheet_' + CONFIG.SHEET_NAME;
+}
+
+function cacheGetTable_(cache) {
+  const base = cacheBaseKey_();
+  const n = Number(cache.get(base + '_meta') || 0);
+  if (!n) return null;
+  const keys = [];
+  for (let i = 0; i < n; i++) keys.push(base + '_' + i);
+  const got = cache.getAll(keys);
+  let json = '';
+  for (let i = 0; i < n; i++) {
+    const part = got[base + '_' + i];
+    if (part === null || part === undefined) return null;        // một mảnh đã bị xoá khỏi cache: coi như hụt
+    json += part;
+  }
+  try { return JSON.parse(json); } catch (e) { return null; }
+}
+
+function cachePutTable_(cache, values) {
+  const json = JSON.stringify(values);
+  const parts = [];
+  let i = 0;
+  while (i < json.length) {
+    let end = Math.min(i + CACHE_CHUNK, json.length);
+    if (end < json.length) {                                     // không cắt đôi ký tự emoji (cặp surrogate)
+      const c = json.charCodeAt(end - 1);
+      if (c >= 0xD800 && c <= 0xDBFF) end--;
+    }
+    parts.push(json.substring(i, end));
+    i = end;
+  }
+  if (parts.length > CACHE_MAX_CHUNKS) return false;
+  const base = cacheBaseKey_();
+  const entries = {};
+  parts.forEach((part, k) => { entries[base + '_' + k] = part; });
+  entries[base + '_meta'] = String(parts.length);
+  try { cache.putAll(entries, CONFIG.CACHE_SECONDS); return true; } catch (e) { return false; }
+}
+
 // Đọc toàn bộ sheet 1 lần (có cache). Dùng getDisplayValues để giữ đúng định dạng ô (VD 10%).
 function getSheetData_() {
+  if (sheetMemo_) return sheetMemo_;
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'sheet_' + CONFIG.SHEET_NAME;
   if (CONFIG.CACHE_SECONDS > 0) {
-    const hit = cache.get(cacheKey);
-    if (hit) return JSON.parse(hit);
+    const hit = cacheGetTable_(cache);
+    if (hit) { sheetMemo_ = hit; return hit; }
   }
 
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = openSpreadsheet_().getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) throw new Error('Không tìm thấy sheet "' + CONFIG.SHEET_NAME + '"');
 
   const values = sheet.getDataRange().getDisplayValues();
-  if (CONFIG.CACHE_SECONDS > 0) {
-    try { cache.put(cacheKey, JSON.stringify(values), CONFIG.CACHE_SECONDS); } catch (e) { /* >100KB thì bỏ cache */ }
+  if (CONFIG.CACHE_SECONDS > 0 && !cachePutTable_(cache, values)) {
+    log_('warn', 'sheet_cache_skipped', { rows: values.length });   // bảng quá lớn hoặc cache lỗi: bot vẫn chạy nhưng đọc sheet mỗi tin nhắn
   }
+  sheetMemo_ = values;
   return values;
 }
 
 function clearSheetCache_() {
-  CacheService.getScriptCache().remove('sheet_' + CONFIG.SHEET_NAME);
+  sheetMemo_ = null;
+  const cache = CacheService.getScriptCache();
+  const base = cacheBaseKey_();
+  const n = Number(cache.get(base + '_meta') || 0);
+  const keys = [base + '_meta'];
+  for (let i = 0; i < n; i++) keys.push(base + '_' + i);
+  cache.removeAll(keys);
 }
 
 function isHidden_(row) {
@@ -448,7 +525,7 @@ function testGetMe() { requireOwner_(); console.log(JSON.stringify(callZalo_('ge
 // Tạo sheet Products với dữ liệu mẫu (xoá dữ liệu cũ của tab này!)
 function seedSampleData() {
   requireOwner_();
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const ss = openSpreadsheet_();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(CONFIG.SHEET_NAME);
   sheet.clear();
